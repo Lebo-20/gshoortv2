@@ -69,10 +69,7 @@ async def update_bot(event):
         result = subprocess.run(["git", "pull", "origin", "main"], capture_output=True, text=True)
         await status_msg.edit(f"✅ Repositori berhasil di-pull:\n```\n{result.stdout}\n```\n\nSedang memulai ulang sistem (Restarting)...")
         
-        # Disconnect client
-        await client.disconnect()
-        
-        # Restart the script
+        # Restart the script forcefully replacing the current process image
         os.execl(sys.executable, sys.executable, *sys.argv)
     except Exception as e:
         await status_msg.edit(f"❌ Gagal melakukan update: {e}")
