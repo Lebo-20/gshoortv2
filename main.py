@@ -74,8 +74,11 @@ async def update_bot(event):
         result = subprocess.run(["git", "pull", "origin", "main"], capture_output=True, text=True)
         await status_msg.edit(f"✅ Repositori berhasil di-pull:\n```\n{result.stdout}\n```\n\nSedang memulai ulang sistem (Restarting)...")
         
+        # Free session lock before restarting
+        await client.disconnect()
+        
         # Restart the script
-        os.execl(sys.executable, sys.executable, *sys.argv)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
     except Exception as e:
         await status_msg.edit(f"❌ Gagal melakukan update: {e}")
 
@@ -110,7 +113,33 @@ async def panel_callback(event):
 
 @client.on(events.NewMessage(pattern='/start'))
 async def start(event):
-    await event.reply("Welcome to DramaBite Downloader Bot! 🎉\n\nGunakan perintah `/download {bookId}` untuk mulai.")
+    await event.reply("Welcome to DramaBite Downloader Bot! 🎉\n\nGunakan perintah `/download {bookId}` atau `/cari {judul}` untuk mulai.")
+
+@client.on(events.NewMessage(pattern=r'/cari (.+)'))
+async def on_search(event):
+    if event.chat_id != ADMIN_ID:
+        return
+        
+    keyword = event.pattern_match.group(1).strip()
+    status_msg = await event.reply(f"🔍 Mencari `{keyword}`...")
+    
+    results = await search_dramas(keyword)
+    
+    if not results:
+        await status_msg.edit(f"❌ Tidak ditemukan hasil untuk `{keyword}`.")
+        return
+        
+    text = f"**Hasil Pencarian untuk:** `{keyword}`\n\n"
+    for idx, d in enumerate(results[:15], 1):
+        book_id = str(d.get("cid") or d.get("id") or "")
+        title = d.get("title") or d.get("name") or "Unknown"
+        status = "✅" if book_id in processed_ids else "☑️"
+        text += f"{idx}. {status} **{title}**\n   └ ID: `{book_id}`\n"
+        
+    text += "\nKeterangan: ✅ Sudah di-download | ☑️ Belum\n"
+    text += "\nGunakan `/download <ID>` untuk mengunduh."
+    
+    await status_msg.edit(text)
 
 @client.on(events.NewMessage(pattern=r'/download (\d+)'))
 async def on_download(event):
@@ -213,7 +242,9 @@ async def auto_mode_loop():
             
             # Source 1: Recommendation (Module)
             logger.info("🔍 Scanning module-recommendations...")
-            rec_dramas = await get_latest_dramas(pages=2 if is_initial_run else 1) or []
+            # Fetch many pages to go backwards (terbaru ke belakang)
+            scan_pages = 50 if is_initial_run else 1
+            rec_dramas = await get_latest_dramas(pages=scan_pages) or []
             
             # Source 2: Home Page (Paling Populer, etc.)
             logger.info("🔍 Scanning home-list...")
@@ -222,6 +253,10 @@ async def auto_mode_loop():
             # Filter and Combine
             new_queue = []
             seen_in_scan = set()
+            
+            # Reverse lists to process oldest newly-found first
+            rec_dramas.reverse()
+            home_dramas.reverse()
             
             for d in (rec_dramas + home_dramas):
                 book_id = str(d.get("cid") or d.get("id") or "")
