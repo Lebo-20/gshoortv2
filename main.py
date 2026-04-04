@@ -12,7 +12,8 @@ load_dotenv()
 # Local imports
 from api import (
     get_drama_detail, get_all_episodes, get_latest_dramas,
-    get_latest_idramas, get_idrama_detail, get_idrama_all_episodes
+    get_latest_idramas, get_idrama_detail, get_idrama_all_episodes,
+    search_dramas
 )
 from downloader import download_all_episodes
 from merge import merge_episodes
@@ -73,8 +74,11 @@ async def update_bot(event):
         result = subprocess.run(["git", "pull", "origin", "main"], capture_output=True, text=True)
         await status_msg.edit(f"✅ Repositori berhasil di-pull:\n```\n{result.stdout}\n```\n\nSedang memulai ulang sistem (Restarting)...")
         
-        # Restart the script forcefully replacing the current process image
-        os.execl(sys.executable, sys.executable, *sys.argv)
+        # Free session lock before restarting
+        await client.disconnect()
+        
+        # Restart the script forcefully
+        os.execv(sys.executable, [sys.executable] + sys.argv)
     except Exception as e:
         await status_msg.edit(f"❌ Gagal melakukan update: {e}")
 
@@ -111,7 +115,33 @@ async def panel_callback(event):
 
 @client.on(events.NewMessage(pattern='/start'))
 async def start(event):
-    await event.reply("Welcome to Dramabox Downloader Bot! 🎉\n\nGunakan perintah `/download {bookId}` untuk mulai.")
+    await event.reply("Welcome to Dramabox Downloader Bot! 🎉\n\nGunakan perintah `/download {bookId}` atau `/cari {judul}` untuk mulai.")
+
+@client.on(events.NewMessage(pattern=r'/cari (.+)'))
+async def on_search(event):
+    if event.chat_id != ADMIN_ID:
+        return
+        
+    keyword = event.pattern_match.group(1).strip()
+    status_msg = await event.reply(f"🔍 Mencari `{keyword}`...")
+    
+    results = await search_dramas(keyword, pages=1) # Fetch top 20
+    
+    if not results:
+        await status_msg.edit(f"❌ Tidak ditemukan hasil untuk `{keyword}`.")
+        return
+        
+    text = f"**Hasil Pencarian untuk:** `{keyword}`\n\n"
+    for idx, d in enumerate(results[:15], 1):
+        book_id = str(d.get("bookId") or d.get("id") or d.get("bookid", ""))
+        title = d.get("title") or d.get("bookName") or d.get("name") or "Unknown"
+        status = "✅" if book_id in processed_ids else "☑️"
+        text += f"{idx}. {status} **{title}**\n   └ ID: `{book_id}`\n"
+        
+    text += "\nKeterangan: ✅ Sudah di-download | ☑️ Belum\n"
+    text += "\nGunakan `/download <ID>` untuk mengunduh."
+    
+    await status_msg.edit(text)
 
 @client.on(events.NewMessage(pattern=r'/download (\d+)'))
 async def on_download(event):
@@ -231,13 +261,25 @@ async def auto_mode_loop():
             
             # --- SOURCE 1: MicroDrama ---
             logger.info("🔍 Scanning Source 1 (MicroDrama)...")
-            api1_dramas = await get_latest_dramas(pages=3 if is_initial_run else 1) or []
-            api1_new = [d for d in api1_dramas if str(d.get("bookId") or d.get("id") or d.get("bookid", "")) not in processed_ids]
+             # Fetch many pages to go backwards (terbaru ke belakang)
+            scan_pages = 50 if is_initial_run else 3
+            api1_dramas = await get_latest_dramas(pages=scan_pages) or []
+            api1_new = []
+            for d in reversed(api1_dramas): # Process oldest first
+                book_id = str(d.get("bookId") or d.get("id") or d.get("bookid", ""))
+                if book_id and book_id not in processed_ids:
+                    if d not in api1_new:
+                        api1_new.append(d)
             
             # --- SOURCE 2: iDrama ---
             logger.info("🔍 Scanning Source 2 (iDrama)...")
             api2_dramas = await get_latest_idramas() or []
-            api2_new = [d for d in api2_dramas if str(d.get("bookId") or d.get("id") or d.get("bookid", "")) not in processed_ids]
+            api2_new = []
+            for d in reversed(api2_dramas):
+                book_id = str(d.get("bookId") or d.get("id") or d.get("bookid", ""))
+                if book_id and book_id not in processed_ids:
+                    if d not in api2_new:
+                        api2_new.append(d)
             
             # --- SYSTEM INTERLEAVED (Seling-Seling) ---
             # Menggabungkan hasil dengan urutan selang-seling: S1, S2, S1, S2...

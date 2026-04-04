@@ -70,6 +70,40 @@ async def get_latest_dramas(pages=1, types=None):
     
     return all_dramas
 
+async def search_dramas(keyword: str, pages=1):
+    """Searches dramas by keyword."""
+    all_dramas = []
+    
+    async with httpx.AsyncClient(timeout=30) as client:
+        for page in range(1, pages + 1):
+            url = f"{BASE_URL}/list"
+            params = {
+                "lang": "id",
+                "code": AUTH_CODE,
+                "page": page,
+                "limit": 20,
+                "keyword": keyword
+            }
+                
+            try:
+                response = await client.get(url, params=params)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("success") and "data" in data:
+                        items_data = data["data"]
+                        items = items_data.get("data", [])
+                        if not items:
+                            break
+                        all_dramas.extend(items)
+                    else:
+                        break
+                else:
+                    break
+            except Exception as e:
+                logger.error(f"Error searching page {page}: {e}")
+                break
+    
+    return all_dramas
 # iDrama API (API 2) Configuration
 BASE_IDRAMA = "https://idrama.dramabos.my.id"
 
