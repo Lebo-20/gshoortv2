@@ -13,6 +13,7 @@ async def download_file_ffmpeg(url: str, path: str):
         # We use await asyncio.create_subprocess_exec for non-blocking execution
         command = [
             "ffmpeg", "-y", 
+            "-allowed_extensions", "ALL",
             "-protocol_whitelist", "file,http,https,tcp,tls,crypto",
             "-i", url,
             "-c", "copy", "-bsf:a", "aac_adtstoasc",
