@@ -86,7 +86,8 @@ async def update_bot(event):
 async def panel(event):
     if event.chat_id != ADMIN_ID:
         return
-    await event.reply("🎛 **Dramabox Control Panel**", buttons=get_panel_buttons())
+    BotState.is_auto_running = False
+    await event.reply("🎛 **Dramabox Control Panel**\n\nAuto-mode has been **Stopped**. Use the buttons below to control.", buttons=get_panel_buttons())
 
 @client.on(events.CallbackQuery())
 async def panel_callback(event):
@@ -325,11 +326,9 @@ async def auto_mode_loop():
                     except: pass
                 else:
                     logger.error(f"❌ Failed to process {title}")
-                    BotState.is_auto_running = False
                     try:
-                        await client.send_message(ADMIN_ID, f"🚨 **ERROR**: Proses `{title}` gagal!\n🛑 **Auto-mode BERHENTI**.")
+                        await client.send_message(ADMIN_ID, f"⚠️ **Gagal memproses `{title}`**, melanjutkan ke drama berikutnya...")
                     except: pass
-                    break
                 
                 await asyncio.sleep(10)
             
