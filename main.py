@@ -217,12 +217,27 @@ async def process_drama_full(book_id, chat_id, status_msg=None, message_thread_i
     try:
         if status_msg: await status_msg.edit(f"🎬 Processing **{title}**...")
         
-        success = await download_all_episodes(episodes, video_dir)
+        async def download_progress(current, total):
+            percentage = (current / total) * 100
+            filled = int(15 * current // total)
+            bar = '█' * filled + '░' * (15 - filled)
+            try:
+                await status_msg.edit(
+                    f"🎬 Drama: **{title}**\n"
+                    f"📥 Downloading Episodes:\n"
+                    f"[{bar}] {percentage:.1f}%\n"
+                    f"📦 `{current} / {total} Episodes`"
+                )
+            except: pass
+
+        success = await download_all_episodes(episodes, video_dir, progress_callback=download_progress)
         if not success:
             error_text = f"❌ Gagal Download episode drama **{title}**."
             if status_msg: await status_msg.edit(error_text)
             return False, error_text
 
+        if status_msg: await status_msg.edit(f"🎬 Drama: **{title}**\n🔄 **Sedang menggabungkan (Merging) semua episode...**\n⏳ *Mohon tunggu, ini memerlukan waktu beberapa saat.*")
+        
         output_video_path = os.path.join(temp_dir, f"{title}.mp4")
         merge_success = merge_episodes(video_dir, output_video_path)
         if not merge_success:

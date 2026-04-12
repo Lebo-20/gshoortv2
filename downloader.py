@@ -60,17 +60,19 @@ async def download_file_http(client: httpx.AsyncClient, url: str, path: str, pro
         logger.error(f"Failed to download {url}: {e}")
         return False
 
-async def download_all_episodes(episodes, download_dir: str, semaphore_count: int = 5):
+async def download_all_episodes(episodes, download_dir: str, semaphore_count: int = 5, progress_callback=None):
     """
     Downloads all episodes concurrently.
     Correctly handles both direct MP4 links and m3u8 playlists via proxy.
     """
     os.makedirs(download_dir, exist_ok=True)
     semaphore = asyncio.Semaphore(semaphore_count)
-
-    tasks = []
     
+    total = len(episodes)
+    downloaded = 0
+
     async def limited_download(ep):
+        nonlocal downloaded
         async with semaphore:
             # Normalize episode number for ranking
             ep_num = str(ep.get('episode', 'unk')).zfill(3)
@@ -100,6 +102,9 @@ async def download_all_episodes(episodes, download_dir: str, semaphore_count: in
             
             if success:
                 logger.info(f"Downloaded {filename}")
+                downloaded += 1
+                if progress_callback:
+                    await progress_callback(downloaded, total)
             else:
                 logger.error(f"Failed to download episode {ep_num}")
                 
