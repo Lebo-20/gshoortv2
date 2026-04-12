@@ -10,20 +10,35 @@ logger = logging.getLogger(__name__)
 last_update_data = {"time": 0, "percentage": -1}
 
 async def upload_progress(current, total, event, msg_text="Uploading..."):
-    """Callback function for upload progress with throttling to avoid flood wait."""
+    """Callback function for upload progress with visual bar and MB count."""
     import time
     global last_update_data
     
-    percentage = int((current / total) * 100)
+    percentage = (current / total) * 100
     now = time.time()
     
-    # Only update if percentage has changed, is a multiple of 10, 
-    # and at least 5 seconds have passed since last update
-    if (percentage % 10 == 0) and (percentage != last_update_data["percentage"]) and (now - last_update_data["time"] > 5):
+    # Only update if percentage has changed significantly or 5 seconds passed
+    # Using 5% steps for visual bar to avoid flood
+    if (int(percentage) % 5 == 0) and (int(percentage) != last_update_data["percentage"]) and (now - last_update_data["time"] > 5):
         try:
-            last_update_data["percentage"] = percentage
+            last_update_data["percentage"] = int(percentage)
             last_update_data["time"] = now
-            await event.edit(f"{msg_text} {percentage}%")
+            
+            # Create progress bar
+            filled_length = int(15 * current // total)
+            bar = '█' * filled_length + '░' * (15 - filled_length)
+            
+            # Format sizes to MB
+            current_mb = current / (1024 * 1024)
+            total_mb = total / (1024 * 1024)
+            
+            progress_msg = (
+                f"{msg_text}\n"
+                f"[{bar}] {percentage:.1f}%\n"
+                f"⚡ `{current_mb:.1f} MB / {total_mb:.1f} MB`"
+            )
+            
+            await event.edit(progress_msg)
         except Exception:
             pass
 
