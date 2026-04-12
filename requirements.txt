@@ -3,3 +3,5 @@ telethon
 tqdm
 python-dotenv
 asyncpg
+fastapi
+uvicorn

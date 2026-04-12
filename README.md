@@ -1,18 +1,18 @@
-# 🎬 GoodShort Automation Bot (v2)
+# 🎬 GoodShort Automation Bot (Pure Python)
 
-Sistem otomatisasi profesional untuk mendownload, menggabungkan episode (Merge), dan mengupload drama dari platform GoodShort ke Telegram secara otomatis.
+Sistem otomatisasi profesional untuk mendownload, menggabungkan episode (Merge), dan mengupload drama dari platform GoodShort ke Telegram secara otomatis. Sekarang sepenuhnya berjalan di **Python 3**.
 
 ## 🌟 Fitur Unggulan
+- **100% Python Logic**: Tidak perlu menginstal Node.js lagi.
 - **Full Auto-Mode**: Bot otomatis mencari dan mengupload drama terbaru secara berkala.
 - **Telegram Topic Support**: Mendukung pengiriman ke grup dengan topik (Forum mode).
 - **Auto Merge**: Secara otomatis menggabungkan puluhan episode menjadi satu file video utuh.
-- **Node.js Proxy**: Bypass proteksi durasi video (mencegah video terpotong 10 menit).
+- **Python Proxy**: Bypass proteksi durasi video (mencegah video terpotong 10 menit).
 - **Control Panel**: Admin dapat mengontrol bot langsung melalui Telegram.
 
 ---
 
 ## 📋 Prasyarat
-- **Node.js** (v16+)
 - **Python** (v3.10+)
 - **FFmpeg** (Wajib terinstal di sistem/VPS)
 
@@ -28,10 +28,6 @@ cd gshoortv2
 
 ### 2. Instal Dependensi
 ```bash
-# Instal untuk Proxy (Node.js)
-npm install
-
-# Instal untuk Bot (Python)
 pip install -r requirements.txt
 ```
 
@@ -59,11 +55,11 @@ Gunakan **PM2** agar bot tetap berjalan di background dan otomatis restart jika 
 
 ### 1. Jalankan Proxy & Bot
 ```bash
-# Jalankan Proxy Video
-pm2 start goodshort-proxy.js --name "gs-proxy"
+# Jalankan Proxy Video (Python)
+pm2 start "python3 proxy.py" --name "gs-proxy"
 
-# Jalankan Bot Logika
-pm2 start main.py --name "gs-bot" --interpreter python3
+# Jalankan Bot Logika (Python)
+pm2 start "python3 main.py" --name "gs-bot"
 ```
 
 ### 2. Perintah Penting PM2
@@ -71,8 +67,8 @@ Berikut adalah daftar perintah untuk memantau bot Anda:
 - **Melihat Log:** `pm2 logs`
 - **Melihat Status:** `pm2 status`
 - **Restart Bot:** `pm2 restart gs-bot`
+- **Restart Proxy:** `pm2 restart gs-proxy`
 - **Stop Semua:** `pm2 stop all`
-- **Hapus dari List:** `pm2 delete all`
 
 ---
 
@@ -85,5 +81,5 @@ Berikut adalah daftar perintah untuk memantau bot Anda:
 ---
 
 ## ⚠️ Catatan Penting
-- Pastikan folder database/queue sudah terhubung dengan benar di `DATABASE_URL`.
-- Pastikan izin bot di grup Telegram sudah lengkap (Admin + post messages).
+- Pastikan `ffmpeg` terinstal: `sudo apt update && sudo apt install ffmpeg -y`
+- Bot menggunakan port `3100` untuk proxy lokal.
