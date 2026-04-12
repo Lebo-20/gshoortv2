@@ -93,7 +93,7 @@ async def load_book(book_id: str):
 async def get_m3u8(chapter_id: int, request: Request, bookId: str = None):
     # Auto-fetch jika belum ada
     if chapter_id not in state["episodes"] and bookId:
-        ok = await fetch_book(book_Id)
+        ok = await fetch_book(bookId)
         if not ok:
             raise HTTPException(status_code=500, detail="Failed to fetch book data")
 
