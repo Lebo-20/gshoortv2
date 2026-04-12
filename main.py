@@ -202,8 +202,9 @@ async def process_drama_full(book_id, chat_id, status_msg=None, message_thread_i
     episodes = await get_all_episodes(book_id)
     
     if not detail or not episodes:
-        if status_msg: await status_msg.edit(f"❌ Detail atau Episode `{book_id}` tidak ditemukan.")
-        return False
+        error_msg = f"❌ Detail atau Episode `{book_id}` tidak ditemukan."
+        if status_msg: await status_msg.edit(error_msg)
+        return False, error_msg
 
     title = detail.get("title") or detail.get("bookName") or detail.get("name") or f"Drama_{book_id}"
     description = detail.get("intro") or detail.get("introduction") or detail.get("description") or "No description available."
@@ -218,14 +219,16 @@ async def process_drama_full(book_id, chat_id, status_msg=None, message_thread_i
         
         success = await download_all_episodes(episodes, video_dir)
         if not success:
-            if status_msg: await status_msg.edit("❌ Download Gagal.")
-            return False
+            error_text = f"❌ Gagal Download episode drama **{title}**."
+            if status_msg: await status_msg.edit(error_text)
+            return False, error_text
 
         output_video_path = os.path.join(temp_dir, f"{title}.mp4")
         merge_success = merge_episodes(video_dir, output_video_path)
         if not merge_success:
-            if status_msg: await status_msg.edit("❌ Merge Gagal.")
-            return False
+            error_text = f"❌ Gagal Merge video drama **{title}**."
+            if status_msg: await status_msg.edit(error_text)
+            return False, error_text
 
         upload_success = await upload_drama(
             client, chat_id, 
@@ -237,15 +240,17 @@ async def process_drama_full(book_id, chat_id, status_msg=None, message_thread_i
         
         if upload_success:
             if status_msg: await status_msg.delete()
-            return True
+            return True, "Sukses"
         else:
-            if status_msg: await status_msg.edit("❌ Upload Gagal.")
-            return False
+            error_text = f"❌ Gagal Upload video drama **{title}** ke Telegram."
+            if status_msg: await status_msg.edit(error_text)
+            return False, error_text
             
     except Exception as e:
+        err_msg = f"❌ Error Sistem pada **{title}**: {str(e)}"
         logger.error(f"Error processing {book_id}: {e}")
-        if status_msg: await status_msg.edit(f"❌ Error: {e}")
-        return False
+        if status_msg: await status_msg.edit(err_msg)
+        return False, err_msg
     finally:
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
@@ -318,7 +323,7 @@ async def auto_mode_loop():
                 except: pass
                 
                 BotState.is_processing = True
-                success = await process_drama_full(book_id, AUTO_CHANNEL, message_thread_id=MESSAGE_THREAD_ID)
+                success, reason = await process_drama_full(book_id, AUTO_CHANNEL, message_thread_id=MESSAGE_THREAD_ID)
                 BotState.is_processing = False
                 
                 if success:
@@ -327,9 +332,9 @@ async def auto_mode_loop():
                         await client.send_message(ADMIN_ID, f"✅ Sukses Auto-Post: **{title}** ke channel.")
                     except: pass
                 else:
-                    logger.error(f"❌ Failed to process {title}")
+                    logger.error(f"❌ Failed to process {title}: {reason}")
                     try:
-                        await client.send_message(ADMIN_ID, f"⚠️ **Gagal memproses `{title}`**, melanjutkan ke drama berikutnya...")
+                        await client.send_message(ADMIN_ID, f"⚠️ **Gagal Auto-Post `{title}`**\n\n📌 Alasan: {reason}")
                     except: pass
                 
                 await asyncio.sleep(10)
