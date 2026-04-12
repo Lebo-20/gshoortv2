@@ -6,15 +6,26 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Global variable to track last update time and percentage to avoid flood
+last_update_data = {"time": 0, "percentage": -1}
+
 async def upload_progress(current, total, event, msg_text="Uploading..."):
-    """Callback function for upload progress."""
-    percentage = (current / total) * 100
-    try:
-        # Avoid flood by updating every few percentages
-        if int(percentage) % 10 == 0:
-            await event.edit(f"{msg_text} {percentage:.1f}%")
-    except:
-        pass
+    """Callback function for upload progress with throttling to avoid flood wait."""
+    import time
+    global last_update_data
+    
+    percentage = int((current / total) * 100)
+    now = time.time()
+    
+    # Only update if percentage has changed, is a multiple of 10, 
+    # and at least 5 seconds have passed since last update
+    if (percentage % 10 == 0) and (percentage != last_update_data["percentage"]) and (now - last_update_data["time"] > 5):
+        try:
+            last_update_data["percentage"] = percentage
+            last_update_data["time"] = now
+            await event.edit(f"{msg_text} {percentage}%")
+        except Exception:
+            pass
 
 async def upload_drama(client: TelegramClient, chat_id: int, 
                        title: str, description: str, 
