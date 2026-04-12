@@ -19,7 +19,8 @@ async def upload_progress(current, total, event, msg_text="Uploading..."):
 async def upload_drama(client: TelegramClient, chat_id: int, 
                        title: str, description: str, 
                        poster_url: str, video_path: str,
-                       total_episodes: int = 0):
+                       total_episodes: int = 0,
+                       message_thread_id: int = None):
     """
     Uploads the final merged video to Telegram with a clean caption and thumbnail.
     """
@@ -55,7 +56,7 @@ async def upload_drama(client: TelegramClient, chat_id: int,
                 duration = int(float(output[2]))
         except Exception as e:
             logger.warning(f"Failed to extract video info: {e}")
-
+ 
         # 3. Download Thumbnail (poster)
         thumb_path = None
         if poster_url:
@@ -82,17 +83,23 @@ async def upload_drama(client: TelegramClient, chat_id: int,
                 file_to_send,
                 caption=caption,
                 parse_mode='md',
-                force_document=False
+                force_document=False,
+                reply_to=message_thread_id
             )
         else:
             # If no poster available at all, just send the caption as text
             await client.send_message(
                 chat_id,
                 caption,
-                parse_mode='md'
+                parse_mode='md',
+                reply_to=message_thread_id
             )
         
-        status_msg = await client.send_message(chat_id, "📤 Sedang mengupload final video ke Telegram...")
+        status_msg = await client.send_message(
+            chat_id, 
+            "📤 Sedang mengupload final video ke Telegram...",
+            reply_to=message_thread_id
+        )
         
         video_attributes = [
             DocumentAttributeVideo(
@@ -111,7 +118,8 @@ async def upload_drama(client: TelegramClient, chat_id: int,
             thumb=thumb_path if thumb_path and os.path.exists(thumb_path) else None,
             attributes=video_attributes,
             progress_callback=lambda c, t: upload_progress(c, t, status_msg, "Upload Video:"),
-            supports_streaming=True
+            supports_streaming=True,
+            reply_to=message_thread_id
         )
         
         await status_msg.delete()

@@ -1,0 +1,7 @@
+.env
+*.session
+__pycache__/
+node_modules/
+episodes/
+*.mp4
+processed.json

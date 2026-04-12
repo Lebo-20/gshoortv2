@@ -25,6 +25,7 @@ API_HASH = os.environ.get("API_HASH", "")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
 AUTO_CHANNEL = int(os.environ.get("AUTO_CHANNEL", ADMIN_ID))
+MESSAGE_THREAD_ID = int(os.environ.get("MESSAGE_THREAD_ID", "0")) or None
 PROCESSED_FILE = "processed.json"
 
 # Initialize state
@@ -195,7 +196,7 @@ async def on_download(event):
     await process_drama_full(book_id, chat_id, status_msg)
     BotState.is_processing = False
 
-async def process_drama_full(book_id, chat_id, status_msg=None):
+async def process_drama_full(book_id, chat_id, status_msg=None, message_thread_id=None):
     """Processes a drama from GoodShort API."""
     detail = await get_drama_detail(book_id)
     episodes = await get_all_episodes(book_id)
@@ -230,7 +231,8 @@ async def process_drama_full(book_id, chat_id, status_msg=None):
             client, chat_id, 
             title, description, 
             poster, output_video_path,
-            total_episodes=len(episodes)
+            total_episodes=len(episodes),
+            message_thread_id=message_thread_id
         )
         
         if upload_success:
@@ -316,7 +318,7 @@ async def auto_mode_loop():
                 except: pass
                 
                 BotState.is_processing = True
-                success = await process_drama_full(book_id, AUTO_CHANNEL)
+                success = await process_drama_full(book_id, AUTO_CHANNEL, message_thread_id=MESSAGE_THREAD_ID)
                 BotState.is_processing = False
                 
                 if success:
