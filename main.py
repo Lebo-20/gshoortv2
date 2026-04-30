@@ -84,7 +84,7 @@ async def update_bot(event):
 
 @client.on(events.NewMessage(pattern='/panel'))
 async def panel(event):
-    if event.chat_id != ADMIN_ID:
+    if event.sender_id != ADMIN_ID:
         return
     await event.reply("🎛 **DramaBite Control Panel**", buttons=get_panel_buttons())
 
@@ -117,7 +117,7 @@ async def start(event):
 
 @client.on(events.NewMessage(pattern=r'/cari (.+)'))
 async def on_search(event):
-    if event.chat_id != ADMIN_ID:
+    if event.sender_id != ADMIN_ID:
         return
         
     keyword = event.pattern_match.group(1).strip()
@@ -141,10 +141,27 @@ async def on_search(event):
     
     await status_msg.edit(text)
 
+@client.on(events.NewMessage(func=lambda e: e.video))
+async def on_video_upload(event):
+    if event.sender_id != ADMIN_ID:
+        return
+
+    video = event.video
+    file_id = f"{video.id}_{video.access_hash}"
+    file_name = event.file.name or f"video_{video.id}.mp4"
+    user_id = str(event.sender_id)
+
+    success = await add_to_queue(user_id, file_id, file_name)
+    
+    if success:
+        await event.reply(f"📥 **Video ditambahkan ke antrian**\n📄 `{file_name}`")
+    else:
+        await event.reply("⚠️ **Video sudah ada di database** (Duplicate skipped)")
+
 @client.on(events.NewMessage(pattern=r'/download (\d+)'))
 async def on_download(event):
     chat_id = event.chat_id
-    if chat_id != ADMIN_ID:
+    if event.sender_id != ADMIN_ID:
         await event.reply("❌ Maaf, perintah ini hanya untuk admin.")
         return
     if BotState.is_processing:
@@ -167,10 +184,18 @@ async def on_download(event):
     status_msg = await event.reply(f"🎬 Drama: **{title}**\n📽 Total Episodes: {len(episodes)}\n\n⏳ Sedang mendownload...")
     
     BotState.is_processing = True
-    processed_ids.add(book_id)
-    save_processed(processed_ids)
-    
-    await process_drama_full(book_id, chat_id, status_msg)
+    # Set thread ID correctly if triggered in a topic
+    thread_id = None
+    if event.is_reply:
+        thread_id = event.message.reply_to_msg_id
+    elif getattr(event.message, 'reply_to', None) and getattr(event.message.reply_to, 'reply_to_top_id', None):
+        thread_id = event.message.reply_to.reply_to_top_id
+    elif getattr(event.message, 'reply_to', None) and getattr(event.message.reply_to, 'reply_to_msg_id', None):
+        thread_id = event.message.reply_to.reply_to_msg_id
+    elif chat_id == AUTO_CHANNEL:
+        thread_id = MESSAGE_THREAD_ID
+        
+    await process_drama_full(book_id, chat_id, status_msg, message_thread_id=thread_id)
     BotState.is_processing = False
 
 async def process_drama_full(book_id, chat_id, status_msg=None):
