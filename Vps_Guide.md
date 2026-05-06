@@ -23,6 +23,10 @@ sudo apt install python3 python3-pip -y
 curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
 sudo apt install -y nodejs
 sudo npm install pm2 -g
+
+# Install Proxy Dependencies
+cd /root/gdshort
+npm install express axios dotenv
 ```
 
 ## 3. Setup Project

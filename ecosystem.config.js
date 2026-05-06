@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: "dramabox-bot",
+      name: "goodshort-bot",
       script: "python3",
       args: "main.py",
       autorestart: true,
@@ -12,13 +12,23 @@ module.exports = {
       }
     },
     {
+      name: "goodshort-proxy",
+      script: "node",
+      args: "goodshort-proxy.js",
+      autorestart: true,
+      watch: false,
+      env: {
+        NODE_ENV: "production",
+        PORT: 3100
+      }
+    },
+    {
       name: "tg-proxy",
       script: "telegram-bot-api",
       args: "--api-id=YOUR_API_ID --api-hash=YOUR_API_HASH --local",
       autorestart: true,
       watch: false,
-      // Only uncomment/use this if you have telegram-bot-api installed
-      // If you don't use local API, you can stop this process: pm2 stop tg-proxy
+      // Stop this if not using Local Telegram API: pm2 stop tg-proxy
     }
   ]
 };

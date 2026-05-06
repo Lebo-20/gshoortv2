@@ -81,7 +81,7 @@ class BotState:
     is_processing = False
 
 # Initialize client
-client = TelegramClient('dramabite_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+client = TelegramClient('goodshort_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 def get_panel_buttons():
     status_text = "🟢 RUNNING" if BotState.is_auto_running else "🔴 STOPPED"
@@ -116,7 +116,7 @@ async def update_bot(event):
 async def panel(event):
     if event.sender_id != ADMIN_ID:
         return
-    await event.reply("🎛 **DramaBite Control Panel**", buttons=get_panel_buttons())
+    await event.reply("🎛 **GoodShort Control Panel**", buttons=get_panel_buttons())
 
 @client.on(events.CallbackQuery())
 async def panel_callback(event):
@@ -127,11 +127,11 @@ async def panel_callback(event):
         if data == b"start_auto":
             BotState.is_auto_running = True
             await event.answer("Auto-mode started!")
-            await event.edit("🎛 **DramaBite Control Panel**", buttons=get_panel_buttons())
+            await event.edit("🎛 **GoodShort Control Panel**", buttons=get_panel_buttons())
         elif data == b"stop_auto":
             BotState.is_auto_running = False
             await event.answer("Auto-mode stopped!")
-            await event.edit("🎛 **DramaBite Control Panel**", buttons=get_panel_buttons())
+            await event.edit("🎛 **GoodShort Control Panel**", buttons=get_panel_buttons())
         elif data == b"status":
             await event.answer(f"Status: {'Running' if BotState.is_auto_running else 'Stopped'}")
             await event.edit("🎛 **DramaBite Control Panel**", buttons=get_panel_buttons())
@@ -143,7 +143,7 @@ async def panel_callback(event):
 
 @client.on(events.NewMessage(pattern='/start'))
 async def start(event):
-    await event.reply("Welcome to DramaBite Downloader Bot! 🎉\n\nGunakan perintah `/download {bookId}` atau `/cari {judul}` untuk mulai.")
+    await event.reply("Welcome to GoodShort Downloader Bot! 🎉\n\nGunakan perintah `/download {bookId}` atau `/cari {judul}` untuk mulai.")
 
 @client.on(events.NewMessage(pattern=r'/cari (.+)'))
 async def on_search(event):
@@ -267,8 +267,8 @@ async def process_drama_full(book_id, chat_id, status_msg=None, reply_to=None):
                 await status_msg.edit(f"🎬 **{title}**\n📥 **Downloading Episodes...**\n{bar}\n📦 {current}/{total} Episodes")
             except: pass
 
-        # Download
-        success = await download_all_episodes(episodes, video_dir, progress_callback=dl_progress)
+        # Download - Passing book_id to downloader
+        success = await download_all_episodes(episodes, video_dir, book_id=book_id, progress_callback=dl_progress)
         if not success:
             await status_msg.edit(f"❌ **Download Gagal:** `{title}`")
             record_failure(book_id)
@@ -306,9 +306,9 @@ async def process_drama_full(book_id, chat_id, status_msg=None, reply_to=None):
             shutil.rmtree(temp_dir)
 
 async def auto_mode_loop():
-    """Loop to find and process new dramas from DramaBite."""
+    """Loop to find and process new dramas from GoodShort."""
     global processed_ids
-    logger.info("🚀 DramaBite Auto-Mode Started.")
+    logger.info("🚀 GoodShort Auto-Mode Started.")
     is_initial_run = True
     
     while True:
@@ -386,7 +386,7 @@ async def auto_mode_loop():
 
 
 if __name__ == '__main__':
-    logger.info("Initializing Dramabox Auto-Bot...")
+    logger.info("Initializing GoodShort Auto-Bot...")
     
     # Start auto loop and keep the client running
     client.loop.create_task(auto_mode_loop())
