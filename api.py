@@ -45,8 +45,8 @@ async def get_latest_dramas(pages=1, types=None):
                 response = await client.get(url, params=params)
                 if response.status_code == 200:
                     data = response.json()
-                    # Home data structure might vary, adjust if needed
-                    videos = data.get("data", [])
+                    # Home data structure: data.data.records
+                    videos = data.get("data", {}).get("records", []) if isinstance(data.get("data"), dict) else []
                     if not videos:
                         break
                     all_dramas.extend(videos)
@@ -68,7 +68,8 @@ async def search_dramas(query: str):
             response = await client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
-            return data.get("data", []) if isinstance(data, dict) else []
+            search_result = data.get("data", {}).get("searchResult", {}) if isinstance(data.get("data"), dict) else {}
+            return search_result.get("records", []) if isinstance(search_result, dict) else []
         except Exception as e:
             logger.error(f"Error searching for {query}: {e}")
             return []
