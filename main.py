@@ -313,17 +313,17 @@ async def auto_mode_loop():
                 BotState.is_processing = False
                 
                 if success:
-                    logger.info(f"✅ Finished {title}")
+                    logger.info(f"✅ Finished {title}. Sleeping for 1 hour as requested...")
                     try:
-                        await client.send_message(ADMIN_ID, f"✅ Sukses Auto-Post: **{title}**")
+                        await client.send_message(ADMIN_ID, f"✅ Sukses Auto-Post: **{title}**\n⏳ Jeda upload berikutnya: 1 jam.")
                     except: pass
+                    await asyncio.sleep(3600) # 1 hour delay after success
                 else:
                     logger.error(f"❌ Failed to process {title}")
                     try:
                         await client.send_message(ADMIN_ID, f"🚨 **ERROR**: Proses `{title}` gagal!")
                     except: pass
-                
-                await asyncio.sleep(10) # Avoid flooding
+                    await asyncio.sleep(10) # Short delay if failed to retry next
             
             if new_found == 0:
                 logger.info("😴 No new content.")
