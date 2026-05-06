@@ -73,7 +73,24 @@ def reset_failure(book_id):
         del failures[book_id]
         save_failures(failures)
 
-# ... rest of state ...
+# State Management
+def load_processed():
+    if os.path.exists(PROCESSED_FILE):
+        import json
+        with open(PROCESSED_FILE, "r") as f:
+            return set(json.load(f))
+    return set()
+
+def save_processed(data):
+    import json
+    with open(PROCESSED_FILE, "w") as f:
+        json.dump(list(data), f)
+
+processed_ids = load_processed()
+
+# Initialize logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Initialize Bot State
 class BotState:
