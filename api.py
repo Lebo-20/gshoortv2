@@ -47,6 +47,9 @@ async def get_latest_dramas(pages=1, types=None):
                     data = response.json()
                     # Home data structure: data.data.records
                     videos = data.get("data", {}).get("records", []) if isinstance(data.get("data"), dict) else []
+                    if not isinstance(videos, list):
+                        videos = []
+                        
                     if not videos:
                         break
                     all_dramas.extend(videos)
@@ -69,7 +72,8 @@ async def search_dramas(query: str):
             response.raise_for_status()
             data = response.json()
             search_result = data.get("data", {}).get("searchResult", {}) if isinstance(data.get("data"), dict) else {}
-            return search_result.get("records", []) if isinstance(search_result, dict) else []
+            records = search_result.get("records", []) if isinstance(search_result, dict) else []
+            return records if isinstance(records, list) else []
         except Exception as e:
             logger.error(f"Error searching for {query}: {e}")
             return []

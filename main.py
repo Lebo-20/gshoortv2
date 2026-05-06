@@ -347,6 +347,8 @@ async def auto_mode_loop():
             new_queue = []
             seen_in_scan = set()
             for d in (rec_dramas + home_dramas):
+                if not isinstance(d, dict):
+                    continue
                 book_id = str(d.get("cid") or d.get("id") or "")
                 if not book_id or book_id in seen_in_scan or should_skip(book_id):
                     continue
