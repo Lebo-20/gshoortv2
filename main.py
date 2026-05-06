@@ -25,25 +25,55 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
 AUTO_CHANNEL = int(os.environ.get("AUTO_CHANNEL", ADMIN_ID))
 PROCESSED_FILE = "processed.json"
+FAILURES_FILE = "failures.json"
+TARGET_CHANNEL = -1003857149032 # From 3857149032
+TARGET_TOPIC = 39
 
-# ... rest of the state management remains same ...
-def load_processed():
-    if os.path.exists(PROCESSED_FILE):
+# Progress Bar Utility
+def get_progress_bar(percentage, length=15):
+    filled_length = int(length * percentage / 100)
+    bar = "█" * filled_length + "░" * (length - filled_length)
+    return f"|{bar}| {percentage:.1f}%"
+
+# Failure Management
+def load_failures():
+    if os.path.exists(FAILURES_FILE):
         import json
-        with open(PROCESSED_FILE, "r") as f:
-            return set(json.load(f))
-    return set()
+        with open(FAILURES_FILE, "r") as f:
+            return json.load(f)
+    return {}
 
-def save_processed(data):
+def save_failures(data):
     import json
-    with open(PROCESSED_FILE, "w") as f:
-        json.dump(list(data), f)
+    with open(FAILURES_FILE, "w") as f:
+        json.dump(data, f)
 
-processed_ids = load_processed()
+failures = load_failures()
 
-# Initialize logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+def should_skip(book_id):
+    import time
+    entry = failures.get(book_id)
+    if entry and entry.get("count", 0) >= 2:
+        last_fail = entry.get("time", 0)
+        # Skip for 1 day (86400 seconds)
+        if time.time() - last_fail < 86400:
+            return True
+    return False
+
+def record_failure(book_id):
+    import time
+    entry = failures.get(book_id, {"count": 0, "time": 0})
+    entry["count"] += 1
+    entry["time"] = time.time()
+    failures[book_id] = entry
+    save_failures(failures)
+
+def reset_failure(book_id):
+    if book_id in failures:
+        del failures[book_id]
+        save_failures(failures)
+
+# ... rest of state ...
 
 # Initialize Bot State
 class BotState:
@@ -198,13 +228,18 @@ async def on_download(event):
     await process_drama_full(book_id, chat_id, status_msg, message_thread_id=thread_id)
     BotState.is_processing = False
 
-async def process_drama_full(book_id, chat_id, status_msg=None):
-    """DramaBite specific processing logic."""
+async def process_drama_full(book_id, chat_id, status_msg=None, reply_to=None):
+    """DramaBite specific processing logic with detailed progress."""
+    if should_skip(book_id):
+        logger.info(f"⏭ Skipping {book_id} due to previous failures.")
+        return False
+
     detail = await get_drama_detail(book_id)
     episodes = await get_all_episodes(book_id)
     
     if not detail or not episodes:
         if status_msg: await status_msg.edit(f"❌ Detail atau Episode `{book_id}` tidak ditemukan.")
+        record_failure(book_id)
         return False
 
     title = detail.get("title") or detail.get("name") or f"Drama_{book_id}"
@@ -216,35 +251,55 @@ async def process_drama_full(book_id, chat_id, status_msg=None):
     os.makedirs(video_dir, exist_ok=True)
     
     try:
-        if status_msg: await status_msg.edit(f"🎬 Processing **{title}**...")
+        import time
+        start_proc = time.time()
         
-        # Download (Now handles m3u8 in downloader.py)
-        success = await download_all_episodes(episodes, video_dir)
+        if not status_msg:
+            status_msg = await client.send_message(chat_id, f"🎬 **Memulai Proses:** `{title}`", reply_to=reply_to)
+        else:
+            await status_msg.edit(f"🎬 **Memulai Proses:** `{title}`")
+        
+        # Download Callback
+        async def dl_progress(current, total):
+            pct = (current / total) * 100
+            bar = get_progress_bar(pct)
+            try:
+                await status_msg.edit(f"🎬 **{title}**\n📥 **Downloading Episodes...**\n{bar}\n📦 {current}/{total} Episodes")
+            except: pass
+
+        # Download
+        success = await download_all_episodes(episodes, video_dir, progress_callback=dl_progress)
         if not success:
-            if status_msg: await status_msg.edit("❌ Download Gagal.")
+            await status_msg.edit(f"❌ **Download Gagal:** `{title}`")
+            record_failure(book_id)
             return False
 
         # Merge
+        await status_msg.edit(f"🎬 **{title}**\n🔄 **Merging episodes...** Mohon tunggu.")
         output_video_path = os.path.join(temp_dir, f"{title}.mp4")
         merge_success = merge_episodes(video_dir, output_video_path)
         if not merge_success:
-            if status_msg: await status_msg.edit("❌ Merge Gagal.")
+            await status_msg.edit(f"❌ **Merge Gagal:** `{title}`")
+            record_failure(book_id)
             return False
 
         # Upload
         upload_success = await upload_drama(
-            client, chat_id, title, description, poster, output_video_path
+            client, chat_id, title, description, poster, output_video_path, reply_to=reply_to
         )
         
         if upload_success:
-            if status_msg: await status_msg.delete()
+            await status_msg.delete()
+            reset_failure(book_id)
             return True
         else:
-            if status_msg: await status_msg.edit("❌ Upload Gagal.")
+            await status_msg.edit(f"❌ **Upload Gagal:** `{title}`")
+            record_failure(book_id)
             return False
     except Exception as e:
         logger.error(f"Error processing {book_id}: {e}")
-        if status_msg: await status_msg.edit(f"❌ Error: {e}")
+        if status_msg: await status_msg.edit(f"❌ **Error:** {e}")
+        record_failure(book_id)
         return False
     finally:
         if os.path.exists(temp_dir):
@@ -266,32 +321,24 @@ async def auto_mode_loop():
             logger.info(f"🔍 Scanning sources (Next in {interval}m)...")
             
             # Source 1: Recommendation (Module)
-            logger.info("🔍 Scanning module-recommendations...")
-            # Fetch many pages to go backwards (terbaru ke belakang)
-            scan_pages = 50 if is_initial_run else 1
-            rec_dramas = await get_latest_dramas(pages=scan_pages) or []
+            rec_dramas = await get_latest_dramas(pages=50 if is_initial_run else 1) or []
             
-            # Source 2: Home Page (Paling Populer, etc.)
-            logger.info("🔍 Scanning home-list...")
+            # Source 2: Home Page
             home_dramas = await get_home_dramas() or []
             
-            # Filter and Combine
+            # Combine
             new_queue = []
             seen_in_scan = set()
-            
-            # Reverse lists to process oldest newly-found first
-            rec_dramas.reverse()
-            home_dramas.reverse()
-            
             for d in (rec_dramas + home_dramas):
                 book_id = str(d.get("cid") or d.get("id") or "")
-                if not book_id or book_id in seen_in_scan:
+                if not book_id or book_id in seen_in_scan or should_skip(book_id):
                     continue
                 seen_in_scan.add(book_id)
                 if book_id not in processed_ids:
                     new_queue.append(d)
             
-            new_found = 0
+            new_queue.reverse() # Oldest first
+            
             for drama in new_queue:
                 if not BotState.is_auto_running: break
                     
@@ -301,21 +348,17 @@ async def auto_mode_loop():
                 processed_ids.add(book_id)
                 save_processed(processed_ids)
                 
-                new_found += 1
-                logger.info(f"✨ New discovery: {title} ({book_id}). Starting process...")
-                
-                try:
-                    await client.send_message(ADMIN_ID, f"🆕 **Auto-System Mendeteksi Drama Baru!**\n🎬 `{title}`\n🆔 `{book_id}`\n⏳ Memproses...")
-                except: pass
+                logger.info(f"✨ New discovery: {title} ({book_id})")
                 
                 BotState.is_processing = True
-                success = await process_drama_full(book_id, AUTO_CHANNEL)
+                # Process in the TARGET TOPIC
+                success = await process_drama_full(book_id, TARGET_CHANNEL, reply_to=TARGET_TOPIC)
                 BotState.is_processing = False
                 
                 if success:
-                    logger.info(f"✅ Finished {title}. Sleeping for 1 hour as requested...")
+                    logger.info(f"✅ Finished {title}")
                     try:
-                        await client.send_message(ADMIN_ID, f"✅ Sukses Auto-Post: **{title}**\n⏳ Jeda upload berikutnya: 1 jam.")
+                        await client.send_message(ADMIN_ID, f"✅ **Sukses Auto-Post:** `{title}`\n⏳ Jeda: 1 jam.")
                     except: pass
                     await asyncio.sleep(3600) # 1 hour delay after success
                 else:
@@ -323,10 +366,15 @@ async def auto_mode_loop():
                     try:
                         await client.send_message(ADMIN_ID, f"🚨 **ERROR**: Proses `{title}` gagal!")
                     except: pass
-                    await asyncio.sleep(10) # Short delay if failed to retry next
+                    await asyncio.sleep(10)
             
-            if new_found == 0:
-                logger.info("😴 No new content.")
+            is_initial_run = False
+            for _ in range(interval * 60):
+                if not BotState.is_auto_running: break
+                await asyncio.sleep(1)
+        except Exception as e:
+            logger.error(f"⚠️ Loop error: {e}")
+            await asyncio.sleep(60)
             
             is_initial_run = False
             for _ in range(interval * 60):

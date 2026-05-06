@@ -37,15 +37,18 @@ async def download_m3u8(url: str, path: str):
         logger.error(f"FFmpeg exception for {url}: {e}")
         return False
 
-async def download_all_episodes(episodes, download_dir: str, semaphore_count: int = 5):
+async def download_all_episodes(episodes, download_dir: str, semaphore_count: int = 5, progress_callback=None):
     """
     Downloads all episodes concurrently using FFmpeg for m3u8 support.
     episodes: list of dicts from DramaBite API: {"vid": "1", "title": "...", "url": "..."}
     """
     os.makedirs(download_dir, exist_ok=True)
     semaphore = asyncio.Semaphore(semaphore_count)
+    total = len(episodes)
+    completed = 0
 
     async def limited_download(ep):
+        nonlocal completed
         async with semaphore:
             # Sort episodes by vid or episode number
             vid = ep.get('vid') or ep.get('episode') or 'unk'
@@ -64,20 +67,20 @@ async def download_all_episodes(episodes, download_dir: str, semaphore_count: in
                 logger.error(f"No URL found for episode {ep_num}")
                 return False
                 
-            logger.info(f"Downloading episode {ep_num} from {url}...")
-            
             # All DramaBite links are m3u8, use ffmpeg
             if ".m3u8" in url.lower() or "m3u8" in url:
                 success = await download_m3u8(url, filepath)
             else:
                 # Fallback for direct MP4 if any exists
                 import httpx
-                async with httpx.AsyncClient(timeout=60) as client:
-                    from downloader import download_file # This seems to be in the same file
-                    success = await download_file_inner(client, url, filepath)
+                async with httpx.AsyncClient(timeout=60) as client_http:
+                    success = await download_file_inner(client_http, url, filepath)
             
             if success:
-                logger.info(f"✅ Downloaded {filename}")
+                completed += 1
+                if progress_callback:
+                    await progress_callback(completed, total)
+                logger.info(f"✅ Downloaded {filename} ({completed}/{total})")
             return success
 
     results = await asyncio.gather(*(limited_download(ep) for ep in episodes))
