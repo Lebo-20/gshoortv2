@@ -249,6 +249,22 @@ async def on_callback(event):
             BotState.user_states.pop(user_id, None)
             await event.edit("🎬 **GoodShort Downloader Menu**\n\nSilakan pilih layanan di bawah ini:", buttons=get_main_menu())
 
+        # Detail Drama Logic
+        elif data.startswith(b"det_"):
+            book_id = data.decode().split("_")[1]
+            await show_drama_detail(event, book_id)
+
+        # Back to Search Results
+        elif data.startswith(b"back_search_"):
+            keyword = data.decode().split("_", 2)[2]
+            await perform_search_inline(event, keyword)
+
+        # Direct Download from Detail
+        elif data.startswith(b"dl_"):
+            book_id = data.decode().split("_")[1]
+            await event.answer("📥 Menambahkan ke antrian download...")
+            await handle_download_logic(book_id, event.chat_id, event)
+
     except Exception as e:
         if "message is not modified" in str(e).lower(): pass
         else: logger.error(f"Callback error: {e}")
@@ -274,28 +290,9 @@ async def on_user_input(event):
     state = BotState.user_states.get(user_id)
     
     if state == "waiting_search":
-        await event.delete() # Clean up user message
         keyword = event.text.strip()
-        
-        # We need to find the last bot message to edit it
-        # Since Telethon can't easily find "last bot message" without storing it,
-        # we will send a new message and then edit it for the results.
-        status_msg = await event.respond(f"🔍 Mencari `{keyword}`...")
-        
-        results = await search_dramas(keyword)
-        if not results:
-            await status_msg.edit(f"❌ Tidak ditemukan hasil untuk `{keyword}`.", buttons=[Button.inline("🔙 Kembali", b"menu_back")])
-            return
-            
-        text = f"**Hasil Pencarian untuk:** `{keyword}`\n\n"
-        for idx, d in enumerate(results[:15], 1):
-            book_id = str(d.get("bookId") or d.get("cid") or d.get("id") or "")
-            title = d.get("bookName") or d.get("title") or d.get("name") or "Unknown"
-            status = "✅" if book_id in processed_ids else "☑️"
-            text += f"{idx}. {status} **{title}**\n   └ ID: `{book_id}`\n"
-            
-        text += "\n_Gunakan menu Download dan masukkan ID di atas._"
-        await status_msg.edit(text, buttons=[Button.inline("🔙 Kembali", b"menu_back")])
+        await event.delete()
+        await perform_search_inline(event, keyword)
         BotState.user_states.pop(user_id, None)
 
     elif state == "waiting_download":
@@ -316,18 +313,76 @@ async def on_search_cmd(event):
     # ... rest of logic ... (I'll keep it for compatibility but redirect to a helper)
     await perform_search(keyword, status_msg)
 
-async def perform_search(keyword, msg):
+async def perform_search_inline(event, keyword):
+    """Helper to show search results as buttons"""
     results = await search_dramas(keyword)
     if not results:
-        await msg.edit(f"❌ Tidak ditemukan hasil untuk `{keyword}`.")
+        msg = f"❌ Tidak ditemukan hasil untuk `{keyword}`."
+        if isinstance(event, events.CallbackQuery.Event):
+            await event.edit(msg, buttons=[Button.inline("🔙 Kembali", b"menu_back")])
+        else:
+            await event.respond(msg, buttons=[Button.inline("🔙 Kembali", b"menu_back")])
         return
-    text = f"**Hasil Pencarian untuk:** `{keyword}`\n\n"
-    for idx, d in enumerate(results[:15], 1):
+
+    buttons = []
+    for d in results[:12]: # Limit 12 results for button clarity
         book_id = str(d.get("bookId") or d.get("cid") or d.get("id") or "")
         title = d.get("bookName") or d.get("title") or d.get("name") or "Unknown"
-        status = "✅" if book_id in processed_ids else "☑️"
-        text += f"{idx}. {status} **{title}**\n   └ ID: `{book_id}`\n"
-    await msg.edit(text)
+        status = "✅" if book_id in processed_ids else "🎬"
+        buttons.append([Button.inline(f"{status} {title}", f"det_{book_id}".encode())])
+    
+    buttons.append([Button.inline("🔙 Kembali ke Menu", b"menu_back")])
+    
+    text = f"🔍 **Hasil Pencarian untuk:** `{keyword}`\n\nSilakan klik pada judul drama untuk melihat detail dan sinopsis."
+    
+    if isinstance(event, events.CallbackQuery.Event):
+        await event.edit(text, buttons=buttons)
+    else:
+        await event.respond(text, buttons=buttons)
+
+async def show_drama_detail(event, book_id):
+    """Show drama poster, synopsis and download button"""
+    try:
+        detail = await get_drama_detail(book_id)
+        if not detail:
+            await event.answer("❌ Gagal mengambil detail drama.", alert=True)
+            return
+
+        book_info = detail.get("book") if isinstance(detail.get("book"), dict) else detail
+        title = book_info.get("bookName") or book_info.get("title") or "Unknown Title"
+        description = book_info.get("introduction") or book_info.get("desc") or "Tidak ada sinopsis."
+        poster = book_info.get("cover") or book_info.get("poster")
+        
+        # Clean up description if too long
+        if len(description) > 800:
+            description = description[:800] + "..."
+
+        caption = (
+            f"🎬 **{title}**\n\n"
+            f"📝 **Sinopsis:**\n{description}\n\n"
+            f"🆔 ID: `{book_id}`"
+        )
+        
+        buttons = [
+            [Button.inline("📥 Download Sekarang", f"dl_{book_id}".encode())],
+            [Button.inline("🔙 Kembali ke Hasil", f"back_search_{title[:20]}".encode())],
+            [Button.inline("🏠 Menu Utama", b"menu_back")]
+        ]
+
+        if poster:
+            # Delete previous message and send new one with photo
+            await event.delete()
+            await client.send_file(event.chat_id, poster, caption=caption, buttons=buttons)
+        else:
+            await event.edit(caption, buttons=buttons)
+            
+    except Exception as e:
+        logger.error(f"Error showing detail: {e}")
+        await event.answer("❌ Terjadi kesalahan saat memuat detail.", alert=True)
+
+async def perform_search(keyword, msg):
+    # This is for the /cari command compatibility
+    await perform_search_inline(msg, keyword)
 
 @client.on(events.NewMessage(pattern=r'/download (\d+)'))
 async def on_download_cmd(event):
@@ -383,7 +438,7 @@ async def manual_worker():
                 elif getattr(event.message, 'reply_to', None) and getattr(event.message.reply_to, 'reply_to_top_id', None):
                     thread_id = event.message.reply_to.reply_to_top_id
                 
-                await process_drama_full(book_id, chat_id, status_msg, message_thread_id=thread_id)
+                await process_drama_full(book_id, chat_id, status_msg, reply_to=thread_id)
             except Exception as e:
                 logger.error(f"Error in manual worker: {e}")
                 try: await event.reply(f"❌ **Error Manual Download:** {e}")
