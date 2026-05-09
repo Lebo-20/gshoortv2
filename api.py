@@ -29,7 +29,10 @@ async def get_all_episodes(book_id: str):
             response = await client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
-            return data.get("data", []) if isinstance(data, dict) else []
+            res_data = data.get("data", []) if isinstance(data, dict) else []
+            if isinstance(res_data, dict) and "list" in res_data:
+                return res_data["list"]
+            return res_data
         except Exception as e:
             logger.error(f"Error fetching episodes for {book_id}: {e}")
             return []

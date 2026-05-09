@@ -2,8 +2,8 @@ module.exports = {
   apps: [
     {
       name: "goodshort-bot",
-      script: "python3",
-      args: "main.py",
+      script: "main.py",
+      interpreter: "python3",
       autorestart: true,
       watch: false,
       max_memory_restart: "1G",
@@ -21,14 +21,6 @@ module.exports = {
         NODE_ENV: "production",
         PORT: 3100
       }
-    },
-    {
-      name: "tg-proxy",
-      script: "telegram-bot-api",
-      args: "--api-id=YOUR_API_ID --api-hash=YOUR_API_HASH --local",
-      autorestart: true,
-      watch: false,
-      // Stop this if not using Local Telegram API: pm2 stop tg-proxy
     }
   ]
 };

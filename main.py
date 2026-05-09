@@ -27,7 +27,7 @@ AUTO_CHANNEL = int(os.environ.get("AUTO_CHANNEL", ADMIN_ID))
 PROCESSED_FILE = "processed.json"
 FAILURES_FILE = "failures.json"
 TARGET_CHANNEL = -1003857149032 # From 3857149032
-TARGET_TOPIC = 39
+TARGET_TOPIC = 1795
 
 # Progress Bar Utility
 def get_progress_bar(percentage, length=15):
