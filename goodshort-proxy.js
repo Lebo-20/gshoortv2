@@ -96,8 +96,13 @@ app.get('/m3u8/:chapterId', async (req, res) => {
     const host  = req.headers.host;
     const lines = content.split('\n').map(line => {
       const stripped = line.trim();
-      if (stripped && !stripped.startsWith('#') && stripped.endsWith('.ts')) {
-        const tsUrl = baseUrl + '/' + stripped;
+      // Segmen adalah baris yang bukan komentar (#) dan tidak kosong
+      if (stripped && !stripped.startsWith('#')) {
+        let tsUrl = stripped;
+        // Jika URL relatif, gabungkan dengan baseUrl
+        if (!stripped.startsWith('http')) {
+          tsUrl = baseUrl + '/' + stripped;
+        }
         return `http://${host}/ts?url=${encodeURIComponent(tsUrl)}`;
       }
       return line;
@@ -106,6 +111,7 @@ app.get('/m3u8/:chapterId', async (req, res) => {
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
     res.send(lines.join('\n'));
   } catch (e) {
+    console.error('[Proxy] m3u8 Error:', e.message);
     res.status(502).send('Failed to fetch m3u8');
   }
 });
