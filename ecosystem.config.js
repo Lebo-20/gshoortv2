@@ -3,7 +3,7 @@ module.exports = {
     {
       name: "goodshort-bot",
       script: "main.py",
-      interpreter: "python3",
+      interpreter: "python",
       autorestart: true,
       watch: false,
       max_memory_restart: "1G",

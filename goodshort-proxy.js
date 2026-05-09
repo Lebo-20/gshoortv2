@@ -30,7 +30,7 @@ async function fetchBook(bookId) {
 
   try {
     const url = `${CONFIG.apiBase}/rawurl/${bookId}?lang=${CONFIG.lang}&q=${CONFIG.quality}&code=${CONFIG.token}`;
-    const res = await axios.get(url, { timeout: 15000 });
+    const res = await axios.get(url, { timeout: 30000 });
     const data = res.data?.data;
     if (!data) return false;
 
@@ -78,7 +78,7 @@ app.get('/m3u8/:chapterId', async (req, res) => {
 
   try {
     const r = await axios.get(m3u8Url, {
-      headers: { 'User-Agent': 'okhttp/4.10.0' },
+      headers: { 'User-Agent': 'okhttp/3.12.13' },
       timeout: 10000,
       responseType: 'text',
     });
@@ -94,12 +94,12 @@ app.get('/m3u8/:chapterId', async (req, res) => {
     }
 
     const host  = req.headers.host;
+    let segmentCount = 0;
     const lines = content.split('\n').map(line => {
       const stripped = line.trim();
-      // Segmen adalah baris yang bukan komentar (#) dan tidak kosong
       if (stripped && !stripped.startsWith('#')) {
+        segmentCount++;
         let tsUrl = stripped;
-        // Jika URL relatif, gabungkan dengan baseUrl
         if (!stripped.startsWith('http')) {
           tsUrl = baseUrl + '/' + stripped;
         }
@@ -108,6 +108,7 @@ app.get('/m3u8/:chapterId', async (req, res) => {
       return line;
     });
 
+    console.log(`[Proxy] Served m3u8 for ${chapterId} (${segmentCount} segments)`);
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
     res.send(lines.join('\n'));
   } catch (e) {
@@ -121,7 +122,7 @@ app.get('/ts', async (req, res) => {
   if (!tsUrl) return res.status(400).send('Missing url');
   try {
     const r = await axios.get(tsUrl, {
-      headers: { 'User-Agent': 'okhttp/4.10.0' },
+      headers: { 'User-Agent': 'okhttp/3.12.13' },
       responseType: 'stream',
       timeout: 20000,
     });

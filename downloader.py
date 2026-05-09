@@ -13,6 +13,8 @@ async def download_m3u8(url: str, path: str):
         # Use simple ffmpeg command as proxy handles the key and segments
         cmd = [
             "ffmpeg", "-y", 
+            "-user_agent", "okhttp/3.12.13",
+            "-allowed_extensions", "ALL",
             "-i", url,
             "-c", "copy", "-bsf:a", "aac_adtstoasc",
             "-loglevel", "error",
@@ -26,6 +28,9 @@ async def download_m3u8(url: str, path: str):
         )
         
         stdout, stderr = await process.communicate()
+        if stderr:
+            print(f"--- FFmpeg Log ---\n{stderr.decode()}\n------------------")
+            
         if process.returncode == 0:
             return True
         else:
