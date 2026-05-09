@@ -53,11 +53,21 @@ failures = load_failures()
 def should_skip(book_id):
     import time
     entry = failures.get(book_id)
-    if entry and entry.get("count", 0) >= 2:
-        last_fail = entry.get("time", 0)
-        # Skip for 1 day (86400 seconds)
+    if not entry:
+        return False
+        
+    count = entry.get("count", 0)
+    last_fail = entry.get("time", 0)
+    
+    # If 3 or more failures, skip permanently
+    if count >= 3:
+        return True
+        
+    # If 1 or 2 failures, skip for 1 day (86400 seconds)
+    if count >= 1:
         if time.time() - last_fail < 86400:
             return True
+            
     return False
 
 def record_failure(book_id):
@@ -73,7 +83,8 @@ def reset_failure(book_id):
         del failures[book_id]
         save_failures(failures)
 
-# State Management
+PROCESSED_TITLES_FILE = "processed_titles.json"
+
 def load_processed():
     if os.path.exists(PROCESSED_FILE):
         import json
@@ -81,12 +92,22 @@ def load_processed():
             return set(json.load(f))
     return set()
 
-def save_processed(data):
+def load_processed_titles():
+    if os.path.exists(PROCESSED_TITLES_FILE):
+        import json
+        with open(PROCESSED_TITLES_FILE, "r") as f:
+            return set(json.load(f))
+    return set()
+
+def save_processed(ids, titles):
     import json
     with open(PROCESSED_FILE, "w") as f:
-        json.dump(list(data), f)
+        json.dump(list(ids), f)
+    with open(PROCESSED_TITLES_FILE, "w") as f:
+        json.dump(list(titles), f)
 
 processed_ids = load_processed()
+processed_titles = load_processed_titles()
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -96,6 +117,9 @@ logger = logging.getLogger(__name__)
 class BotState:
     is_auto_running = True
     is_processing = False
+    lock = asyncio.Lock()
+    manual_queue = asyncio.Queue() # Queue for manual requests
+    user_states = {} # Track user interaction states
 
 # Initialize client
 client = TelegramClient('goodshort_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
@@ -104,7 +128,14 @@ def get_panel_buttons():
     status_text = "🟢 RUNNING" if BotState.is_auto_running else "🔴 STOPPED"
     return [
         [Button.inline("▶️ Start Auto", b"start_auto"), Button.inline("⏹ Stop Auto", b"stop_auto")],
-        [Button.inline(f"📊 Status: {status_text}", b"status")]
+        [Button.inline(f"📊 Panel Status: {status_text}", b"status")],
+        [Button.inline("🔄 Update via GitHub", b"admin_update")]
+    ]
+
+def get_main_menu():
+    return [
+        [Button.inline("🔍 Cari Drama", b"menu_search"), Button.inline("📥 Download via ID", b"menu_download")],
+        [Button.inline("ℹ️ Status & Info", b"menu_status")]
     ]
 
 # ... Panel handlers are ok ...
@@ -135,58 +166,167 @@ async def panel(event):
         return
     await event.reply("🎛 **GoodShort Control Panel**", buttons=get_panel_buttons())
 
-@client.on(events.CallbackQuery())
-async def panel_callback(event):
-    if event.sender_id != ADMIN_ID:
-        return
-    data = event.data
+async def perform_update(event):
+    import subprocess
+    import sys
+    
+    msg = await event.respond("🔄 **Memulai Pembaruan...**")
     try:
-        if data == b"start_auto":
-            BotState.is_auto_running = True
-            await event.answer("Auto-mode started!")
-            await event.edit("🎛 **GoodShort Control Panel**", buttons=get_panel_buttons())
-        elif data == b"stop_auto":
-            BotState.is_auto_running = False
-            await event.answer("Auto-mode stopped!")
-            await event.edit("🎛 **GoodShort Control Panel**", buttons=get_panel_buttons())
-        elif data == b"status":
-            await event.answer(f"Status: {'Running' if BotState.is_auto_running else 'Stopped'}")
-            await event.edit("🎛 **DramaBite Control Panel**", buttons=get_panel_buttons())
+        # Run git pull
+        result = subprocess.run(["git", "pull", "origin", "main"], capture_output=True, text=True)
+        await msg.edit(f"✅ **Update Berhasil!**\n\n```\n{result.stdout}\n```\n\n🔄 Sedang memulai ulang sistem...")
+        
+        # Free session lock
+        await client.disconnect()
+        # Restart
+        os.execv(sys.executable, [sys.executable] + sys.argv)
     except Exception as e:
-        if "message is not modified" in str(e).lower() or "Message string and reply markup" in str(e):
-            pass
-        else:
-            logger.error(f"Callback error: {e}")
+        await msg.edit(f"❌ **Gagal Update:** {e}")
+
+@client.on(events.CallbackQuery())
+async def on_callback(event):
+    data = event.data
+    user_id = event.sender_id
+    
+    try:
+        # Admin Panel Logic
+        if user_id == ADMIN_ID:
+            if data == b"start_auto":
+                BotState.is_auto_running = True
+                await event.answer("Auto-mode started!")
+                await event.edit("🎛 **GoodShort Control Panel**", buttons=get_panel_buttons())
+                return
+            elif data == b"stop_auto":
+                BotState.is_auto_running = False
+                await event.answer("Auto-mode stopped!")
+                await event.edit("🎛 **GoodShort Control Panel**", buttons=get_panel_buttons())
+                return
+            elif data == b"status":
+                await event.answer(f"Status: {'Running' if BotState.is_auto_running else 'Stopped'}")
+                await event.edit("🎛 **GoodShort Control Panel**", buttons=get_panel_buttons())
+                return
+            elif data == b"admin_update":
+                await event.answer("Updating system...")
+                await perform_update(event)
+                return
+
+        # Main Menu Logic (For Everyone)
+        if data == b"menu_search":
+            BotState.user_states[user_id] = "waiting_search"
+            await event.edit("🔍 **Pencarian Drama**\n\nSilakan kirimkan **Judul Drama** yang ingin Anda cari (Contoh: `Suamiku Bos Besar`).", buttons=[Button.inline("🔙 Kembali", b"menu_back")])
+        
+        elif data == b"menu_download":
+            BotState.user_states[user_id] = "waiting_download"
+            await event.edit("📥 **Download via ID**\n\nSilakan kirimkan **Book ID** drama yang ingin didownload.\n\n_Tips: Gunakan menu Cari jika belum tahu ID-nya._", buttons=[Button.inline("🔙 Kembali", b"menu_back")])
+            
+        elif data == b"menu_status":
+            q_size = BotState.manual_queue.qsize()
+            status = "🟢 Aktif" if BotState.is_auto_running else "🔴 Standby"
+            proc = "⏳ Sedang Download" if BotState.is_processing else "✅ Idle"
+            
+            text = (
+                "ℹ️ **Bot Information**\n\n"
+                f"📡 Status: **{status}**\n"
+                f"⚙️ Worker: **{proc}**\n"
+                f"📦 Antrian: **{q_size} drama**\n"
+            )
+            await event.edit(text, buttons=[Button.inline("🔙 Kembali", b"menu_back")])
+            
+        elif data == b"menu_back":
+            BotState.user_states.pop(user_id, None)
+            await event.edit("🎬 **GoodShort Downloader Menu**\n\nSilakan pilih layanan di bawah ini:", buttons=get_main_menu())
+
+    except Exception as e:
+        if "message is not modified" in str(e).lower(): pass
+        else: logger.error(f"Callback error: {e}")
 
 @client.on(events.NewMessage(pattern='/start'))
 async def start(event):
-    await event.reply("Welcome to GoodShort Downloader Bot! 🎉\n\nGunakan perintah `/download {bookId}` atau `/cari {judul}` untuk mulai.")
+    user_id = event.sender_id
+    BotState.user_states.pop(user_id, None)
+    await event.reply(
+        "🎬 **Selamat Datang di GoodShort Downloader!**\n\n"
+        "Saya adalah bot otomatis untuk mendownload drama dari GoodShort. "
+        "Silakan pilih menu di bawah ini untuk memulai.",
+        buttons=get_main_menu()
+    )
+
+@client.on(events.NewMessage())
+async def on_user_input(event):
+    # Only handle messages that are NOT commands
+    if event.text.startswith('/'):
+        return
+        
+    user_id = event.sender_id
+    state = BotState.user_states.get(user_id)
+    
+    if state == "waiting_search":
+        await event.delete() # Clean up user message
+        keyword = event.text.strip()
+        
+        # We need to find the last bot message to edit it
+        # Since Telethon can't easily find "last bot message" without storing it,
+        # we will send a new message and then edit it for the results.
+        status_msg = await event.respond(f"🔍 Mencari `{keyword}`...")
+        
+        results = await search_dramas(keyword)
+        if not results:
+            await status_msg.edit(f"❌ Tidak ditemukan hasil untuk `{keyword}`.", buttons=[Button.inline("🔙 Kembali", b"menu_back")])
+            return
+            
+        text = f"**Hasil Pencarian untuk:** `{keyword}`\n\n"
+        for idx, d in enumerate(results[:15], 1):
+            book_id = str(d.get("bookId") or d.get("cid") or d.get("id") or "")
+            title = d.get("bookName") or d.get("title") or d.get("name") or "Unknown"
+            status = "✅" if book_id in processed_ids else "☑️"
+            text += f"{idx}. {status} **{title}**\n   └ ID: `{book_id}`\n"
+            
+        text += "\n_Gunakan menu Download dan masukkan ID di atas._"
+        await status_msg.edit(text, buttons=[Button.inline("🔙 Kembali", b"menu_back")])
+        BotState.user_states.pop(user_id, None)
+
+    elif state == "waiting_download":
+        await event.delete()
+        book_id = event.text.strip()
+        if not book_id.isdigit():
+            await event.respond("❌ ID harus berupa angka.", buttons=[Button.inline("🔙 Kembali", b"menu_back")])
+            return
+            
+        BotState.user_states.pop(user_id, None)
+        # Re-use the existing download logic by creating a fake event-like structure or just calling the logic
+        await handle_download_logic(book_id, event.chat_id, event)
 
 @client.on(events.NewMessage(pattern=r'/cari (.+)'))
-async def on_search(event):
-    if event.sender_id != ADMIN_ID:
-        return
-        
+async def on_search_cmd(event):
     keyword = event.pattern_match.group(1).strip()
     status_msg = await event.reply(f"🔍 Mencari `{keyword}`...")
-    
+    # ... rest of logic ... (I'll keep it for compatibility but redirect to a helper)
+    await perform_search(keyword, status_msg)
+
+async def perform_search(keyword, msg):
     results = await search_dramas(keyword)
-    
     if not results:
-        await status_msg.edit(f"❌ Tidak ditemukan hasil untuk `{keyword}`.")
+        await msg.edit(f"❌ Tidak ditemukan hasil untuk `{keyword}`.")
         return
-        
     text = f"**Hasil Pencarian untuk:** `{keyword}`\n\n"
     for idx, d in enumerate(results[:15], 1):
-        book_id = str(d.get("cid") or d.get("id") or "")
-        title = d.get("title") or d.get("name") or "Unknown"
+        book_id = str(d.get("bookId") or d.get("cid") or d.get("id") or "")
+        title = d.get("bookName") or d.get("title") or d.get("name") or "Unknown"
         status = "✅" if book_id in processed_ids else "☑️"
         text += f"{idx}. {status} **{title}**\n   └ ID: `{book_id}`\n"
-        
-    text += "\nKeterangan: ✅ Sudah di-download | ☑️ Belum\n"
-    text += "\nGunakan `/download <ID>` untuk mengunduh."
+    await msg.edit(text)
+
+@client.on(events.NewMessage(pattern=r'/download (\d+)'))
+async def on_download_cmd(event):
+    book_id = event.pattern_match.group(1)
+    await handle_download_logic(book_id, event.chat_id, event)
+
+async def handle_download_logic(book_id, chat_id, event):
+    if BotState.lock.locked():
+        await event.respond("⏳ **Antrian:** Bot sedang sibuk. Permintaan Anda telah dimasukkan ke antrian.")
     
-    await status_msg.edit(text)
+    # Add to manual queue
+    await BotState.manual_queue.put((book_id, chat_id, event))
 
 @client.on(events.NewMessage(func=lambda e: e.video))
 async def on_video_upload(event):
@@ -196,54 +336,48 @@ async def on_video_upload(event):
     video = event.video
     file_id = f"{video.id}_{video.access_hash}"
     file_name = event.file.name or f"video_{video.id}.mp4"
-    user_id = str(event.sender_id)
+    await event.reply(f"📥 **Video Terdeteksi**\n📄 `{file_name}`\n\n_Gunakan menu atau ID untuk mendownload drama._")
 
-    success = await add_to_queue(user_id, file_id, file_name)
-    
-    if success:
-        await event.reply(f"📥 **Video ditambahkan ke antrian**\n📄 `{file_name}`")
-    else:
-        await event.reply("⚠️ **Video sudah ada di database** (Duplicate skipped)")
-
-@client.on(events.NewMessage(pattern=r'/download (\d+)'))
-async def on_download(event):
-    chat_id = event.chat_id
-    if event.sender_id != ADMIN_ID:
-        await event.reply("❌ Maaf, perintah ini hanya untuk admin.")
-        return
-    if BotState.is_processing:
-        await event.reply("⚠️ Sedang memproses drama lain. Tunggu hingga selesai.")
-        return
-    book_id = event.pattern_match.group(1)
-    
-    # Check detail
-    detail = await get_drama_detail(book_id)
-    if not detail:
-        await event.reply(f"❌ Gagal mendapatkan detail drama `{book_id}`.")
-        return
+async def manual_worker():
+    """Background worker to process manual download requests."""
+    logger.info("👷 Manual Worker Started.")
+    while True:
+        book_id, chat_id, event = await BotState.manual_queue.get()
         
-    episodes = await get_all_episodes(book_id)
-    if not episodes:
-        await event.reply(f"❌ Drama `{book_id}` tidak memiliki episode.")
-        return
-        
-    title = detail.get("title") or detail.get("name") or f"Drama_{book_id}"
-    status_msg = await event.reply(f"🎬 Drama: **{title}**\n📽 Total Episodes: {len(episodes)}\n\n⏳ Sedang mendownload...")
-    
-    BotState.is_processing = True
-    # Set thread ID correctly if triggered in a topic
-    thread_id = None
-    if event.is_reply:
-        thread_id = event.message.reply_to_msg_id
-    elif getattr(event.message, 'reply_to', None) and getattr(event.message.reply_to, 'reply_to_top_id', None):
-        thread_id = event.message.reply_to.reply_to_top_id
-    elif getattr(event.message, 'reply_to', None) and getattr(event.message.reply_to, 'reply_to_msg_id', None):
-        thread_id = event.message.reply_to.reply_to_msg_id
-    elif chat_id == AUTO_CHANNEL:
-        thread_id = MESSAGE_THREAD_ID
-        
-    await process_drama_full(book_id, chat_id, status_msg, message_thread_id=thread_id)
-    BotState.is_processing = False
+        async with BotState.lock:
+            BotState.is_processing = True
+            try:
+                # Check detail
+                detail = await get_drama_detail(book_id)
+                if not detail:
+                    await event.reply(f"❌ Gagal mendapatkan detail drama `{book_id}`.")
+                    continue
+                    
+                episodes = await get_all_episodes(book_id)
+                if not episodes:
+                    await event.reply(f"❌ Drama `{book_id}` tidak memiliki episode.")
+                    continue
+                    
+                book_info = detail.get("book") if isinstance(detail.get("book"), dict) else detail
+                title = book_info.get("bookName") or book_info.get("title") or book_info.get("name") or f"Drama_{book_id}"
+                
+                status_msg = await event.reply(f"🚀 **Manual Download Started!**\n🎬 Drama: **{title}**\n\n⏳ Mohon tunggu...")
+                
+                # Set thread ID
+                thread_id = None
+                if event.is_reply:
+                    thread_id = event.message.reply_to_msg_id
+                elif getattr(event.message, 'reply_to', None) and getattr(event.message.reply_to, 'reply_to_top_id', None):
+                    thread_id = event.message.reply_to.reply_to_top_id
+                
+                await process_drama_full(book_id, chat_id, status_msg, message_thread_id=thread_id)
+            except Exception as e:
+                logger.error(f"Error in manual worker: {e}")
+                try: await event.reply(f"❌ **Error Manual Download:** {e}")
+                except: pass
+            finally:
+                BotState.is_processing = False
+                BotState.manual_queue.task_done()
 
 async def process_drama_full(book_id, chat_id, status_msg=None, reply_to=None):
     """DramaBite specific processing logic with detailed progress."""
@@ -259,9 +393,10 @@ async def process_drama_full(book_id, chat_id, status_msg=None, reply_to=None):
         record_failure(book_id)
         return False
 
-    title = detail.get("title") or detail.get("name") or f"Drama_{book_id}"
-    description = detail.get("desc") or detail.get("description") or "No description available."
-    poster = detail.get("cover") or detail.get("poster") or ""
+    book_info = detail.get("book") if isinstance(detail.get("book"), dict) else detail
+    title = book_info.get("bookName") or book_info.get("title") or book_info.get("name") or f"Drama_{book_id}"
+    description = book_info.get("introduction") or book_info.get("desc") or book_info.get("description") or "No description available."
+    poster = book_info.get("cover") or book_info.get("poster") or ""
     
     temp_dir = tempfile.mkdtemp(prefix=f"dramabite_{book_id}_")
     video_dir = os.path.join(temp_dir, "episodes")
@@ -308,6 +443,9 @@ async def process_drama_full(book_id, chat_id, status_msg=None, reply_to=None):
         if upload_success:
             await status_msg.delete()
             reset_failure(book_id)
+            processed_ids.add(book_id)
+            processed_titles.add(title.strip().lower())
+            save_processed(processed_ids, processed_titles)
             return True
         else:
             await status_msg.edit(f"❌ **Upload Gagal:** `{title}`")
@@ -349,7 +487,7 @@ async def auto_mode_loop():
             for d in (rec_dramas + home_dramas):
                 if not isinstance(d, dict):
                     continue
-                book_id = str(d.get("cid") or d.get("id") or "")
+                book_id = str(d.get("bookId") or d.get("cid") or d.get("id") or "")
                 if not book_id or book_id in seen_in_scan or should_skip(book_id):
                     continue
                 seen_in_scan.add(book_id)
@@ -360,19 +498,32 @@ async def auto_mode_loop():
             
             for drama in new_queue:
                 if not BotState.is_auto_running: break
+                
+                # PRIORITY CHECK
+                if not BotState.manual_queue.empty():
+                    logger.info("⏳ Manual request detected. Pausing Auto-Mode.")
+                    while not BotState.manual_queue.empty():
+                        await asyncio.sleep(5)
+                    logger.info("▶️ Manual requests finished. Resuming Auto-Mode.")
                     
-                book_id = str(drama.get("cid") or drama.get("id"))
-                title = drama.get("title") or "Unknown"
+                book_id = str(drama.get("bookId") or drama.get("cid") or drama.get("id"))
+                title = drama.get("bookName") or drama.get("title") or "Unknown"
+                
+                # CHECK DUPLICATE ID OR TITLE
+                if book_id in processed_ids or title.strip().lower() in processed_titles:
+                    continue
                 
                 processed_ids.add(book_id)
-                save_processed(processed_ids)
+                # Note: We save only when success, but for now we skip them in scan if they are in sets
+                # Title will be added to set upon successful upload inside process_drama_full
                 
                 logger.info(f"✨ New discovery: {title} ({book_id})")
                 
-                BotState.is_processing = True
-                # Process in the TARGET TOPIC
-                success = await process_drama_full(book_id, TARGET_CHANNEL, reply_to=TARGET_TOPIC)
-                BotState.is_processing = False
+                async with BotState.lock:
+                    BotState.is_processing = True
+                    # Process in the TARGET TOPIC
+                    success = await process_drama_full(book_id, TARGET_CHANNEL, reply_to=TARGET_TOPIC)
+                    BotState.is_processing = False
                 
                 if success:
                     logger.info(f"✅ Finished {title}")
@@ -407,7 +558,8 @@ async def auto_mode_loop():
 if __name__ == '__main__':
     logger.info("Initializing GoodShort Auto-Bot...")
     
-    # Start auto loop and keep the client running
+    # Start workers and auto loop
+    client.loop.create_task(manual_worker())
     client.loop.create_task(auto_mode_loop())
     
     logger.info("Bot is active and monitoring.")

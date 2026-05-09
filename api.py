@@ -48,14 +48,15 @@ async def get_latest_dramas(pages=1, types=None):
                 response = await client.get(url, params=params)
                 if response.status_code == 200:
                     data = response.json()
-                    # Home data structure: data.data.records
-                    videos = data.get("data", {}).get("records", []) if isinstance(data.get("data"), dict) else []
-                    if not isinstance(videos, list):
-                        videos = []
-                        
-                    if not videos:
-                        break
-                    all_dramas.extend(videos)
+                    # GoodShort structure: data.data.records -> each record has an 'items' list
+                    records = data.get("data", {}).get("records", []) if isinstance(data.get("data"), dict) else []
+                    page_dramas = []
+                    for record in records:
+                        if isinstance(record, dict) and "items" in record:
+                            page_dramas.extend(record["items"])
+                    
+                    logger.info(f"Page {page}: Found {len(page_dramas)} items in {len(records)} records")
+                    all_dramas.extend(page_dramas)
                 else:
                     break
             except Exception as e:
