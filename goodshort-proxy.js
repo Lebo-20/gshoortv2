@@ -126,6 +126,10 @@ app.get('/ts', async (req, res) => {
   }
 });
 
+app.get('/status', (req, res) => {
+  res.json({ status: 'online', uptime: process.uptime() });
+});
+
 app.listen(CONFIG.port, () => {
   console.log(`GoodShort Proxy running on port ${CONFIG.port}`);
 });

@@ -160,6 +160,17 @@ async def update_bot(event):
     except Exception as e:
         await status_msg.edit(f"❌ Gagal melakukan update: {e}")
 
+async def check_proxy_status():
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=2) as client:
+            response = await client.get("http://localhost:3100/status")
+            if response.status_code == 200:
+                return "🟢 Online"
+    except:
+        pass
+    return "🔴 Offline"
+
 @client.on(events.NewMessage(pattern='/panel'))
 async def panel(event):
     if event.sender_id != ADMIN_ID:
@@ -223,10 +234,12 @@ async def on_callback(event):
             q_size = BotState.manual_queue.qsize()
             status = "🟢 Aktif" if BotState.is_auto_running else "🔴 Standby"
             proc = "⏳ Sedang Download" if BotState.is_processing else "✅ Idle"
+            proxy_status = await check_proxy_status()
             
             text = (
                 "ℹ️ **Bot Information**\n\n"
-                f"📡 Status: **{status}**\n"
+                f"📡 Bot Status: **{status}**\n"
+                f"🌐 Proxy Status: **{proxy_status}**\n"
                 f"⚙️ Worker: **{proc}**\n"
                 f"📦 Antrian: **{q_size} drama**\n"
             )
