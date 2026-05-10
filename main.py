@@ -448,7 +448,7 @@ async def manual_worker():
                 BotState.manual_queue.task_done()
 
 async def process_drama_full(book_id, chat_id, status_msg=None, reply_to=None):
-    """DramaBite specific processing logic with detailed progress."""
+    """GoodShort specific processing logic with detailed progress."""
     if should_skip(book_id):
         logger.info(f"⏭ Skipping {book_id} due to previous failures.")
         return False
@@ -466,7 +466,7 @@ async def process_drama_full(book_id, chat_id, status_msg=None, reply_to=None):
     description = book_info.get("introduction") or book_info.get("desc") or book_info.get("description") or "No description available."
     poster = book_info.get("cover") or book_info.get("poster") or ""
     
-    temp_dir = tempfile.mkdtemp(prefix=f"dramabite_{book_id}_")
+    temp_dir = tempfile.mkdtemp(prefix=f"goodshort_{book_id}_")
     video_dir = os.path.join(temp_dir, "episodes")
     os.makedirs(video_dir, exist_ok=True)
     

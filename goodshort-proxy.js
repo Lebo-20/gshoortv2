@@ -11,7 +11,7 @@ dotenv.config();
 const CONFIG = {
   port:       3100,
   apiBase:    'https://goodshort.dramabos.my.id',
-  token:      process.env.DRAMABITE_TOKEN || 'A8D6AB170F7B89F2182561D3B32F390D', 
+  token:      process.env.GOODSHORT_TOKEN || 'A8D6AB170F7B89F2182561D3B32F390D', 
   lang:       'in',
   quality:    '720p',
 };
@@ -24,28 +24,41 @@ let lastFetch = {};
 
 const CACHE_TTL = 24 * 60 * 60 * 1000; 
 
-async function fetchBook(bookId) {
+async function fetchBook(bookId, chapterId = null) {
   const now = Date.now();
-  if (lastFetch[bookId] && now - lastFetch[bookId] < CACHE_TTL) return true;
+  // Jika mencari bookId dan sudah ada di cache, skip
+  if (!chapterId && lastFetch[bookId] && now - lastFetch[bookId] < CACHE_TTL) return true;
+  // Jika mencari chapterId dan sudah ada di cache, skip
+  if (chapterId && episodes[chapterId]) return true;
 
   try {
-    const url = `${CONFIG.apiBase}/rawurl/${bookId}?lang=${CONFIG.lang}&q=${CONFIG.quality}&code=${CONFIG.token}`;
+    const idToFetch = chapterId || bookId;
+    console.log(`[Proxy] Fetching rawurl for ID: ${idToFetch}...`);
+    const url = `${CONFIG.apiBase}/rawurl/${idToFetch}?lang=${CONFIG.lang}&q=${CONFIG.quality}&code=${CONFIG.token}`;
     const res = await axios.get(url, { timeout: 30000 });
     const data = res.data?.data;
     if (!data) return false;
 
-    videoKey = data.videoKey;
-    bookName = data.bookName || '';
+    // Update global key jika ada yang baru
+    if (data.videoKey) videoKey = data.videoKey;
+    if (data.bookName) bookName = data.bookName;
 
-    for (const ep of (data.episodes || [])) {
-      if (ep.m3u8) episodes[ep.id] = ep.m3u8;
+    // Masukkan semua episode yang didapat ke dalam cache
+    const fetchedEps = data.episodes || [];
+    if (fetchedEps.length > 0) {
+      for (const ep of fetchedEps) {
+        if (ep.m3u8) episodes[ep.id] = ep.m3u8;
+      }
+    } else if (data.m3u8 && chapterId) {
+      // Jika yang dipanggil adalah ID episode langsung, biasanya m3u8 ada di root data
+      episodes[chapterId] = data.m3u8;
     }
 
-    lastFetch[bookId] = now;
-    console.log(`[Proxy] Loaded: ${bookName} (${data.totalEpisode} eps)`);
+    if (!chapterId) lastFetch[bookId] = now;
+    console.log(`[Proxy] Success! Cached ${Object.keys(episodes).length} total episodes.`);
     return true;
   } catch (e) {
-    console.error('[Proxy] rawurl Error:', e.message);
+    console.error(`[Proxy] rawurl Error for ${chapterId || bookId}:`, e.message);
     return false;
   }
 }
@@ -70,7 +83,7 @@ app.get('/m3u8/:chapterId', async (req, res) => {
   const bookId    = req.query.bookId;
 
   if (!episodes[chapterId] && bookId) {
-    await fetchBook(bookId);
+    await fetchBook(bookId, chapterId);
   }
 
   const m3u8Url = episodes[chapterId];
