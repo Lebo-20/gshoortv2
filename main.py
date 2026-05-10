@@ -479,13 +479,24 @@ async def process_drama_full(book_id, chat_id, status_msg=None, reply_to=None):
         else:
             await status_msg.edit(f"🎬 **Memulai Proses:** `{title}`")
         
-        # Download Callback
+        # Download Callback with Throttling to prevent Flood Wait
+        last_update_time = 0
         async def dl_progress(current, total):
+            nonlocal last_update_time
+            import time
+            now = time.time()
+            # Update only every 5 seconds or when finished
+            if now - last_update_time < 5 and current < total:
+                return
+            
+            last_update_time = now
             pct = (current / total) * 100
             bar = get_progress_bar(pct)
             try:
                 await status_msg.edit(f"🎬 **{title}**\n📥 **Downloading Episodes...**\n{bar}\n📦 {current}/{total} Episodes")
-            except: pass
+            except Exception as e:
+                if "flood" in str(e).lower():
+                    pass # Silently ignore flood errors during progress
 
         # Download - Passing book_id to downloader
         success = await download_all_episodes(episodes, video_dir, book_id=book_id, progress_callback=dl_progress)
