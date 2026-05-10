@@ -80,9 +80,10 @@ async def download_all_episodes(episodes, download_dir: str, book_id: str = None
             
             if success:
                 completed += 1
+                file_size = os.path.getsize(filepath) / (1024 * 1024) # Convert to MB
                 if progress_callback:
                     await progress_callback(completed, total)
-                logger.info(f"✅ Downloaded {filename} ({completed}/{total})")
+                logger.info(f"✅ Downloaded {filename} ({file_size:.2f} MB) ({completed}/{total})")
             return success
 
     results = await asyncio.gather(*(limited_download(ep) for ep in episodes))
