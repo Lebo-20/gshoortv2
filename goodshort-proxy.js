@@ -10,7 +10,7 @@ dotenv.config();
 // ============================================================
 const CONFIG = {
   port:       3100,
-  apiBase:    'https://goodshort.dramabos.my.id',
+  apiBase:    'https://goodshort.dramabos.online',
   token:      process.env.GOODSHORT_TOKEN || 'A8D6AB170F7B89F2182561D3B32F390D', 
   lang:       'in',
   quality:    '720p',

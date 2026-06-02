@@ -4,7 +4,7 @@ import os
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://goodshort.dramabos.my.id"
+BASE_URL = "https://goodshort.dramabos.online"
 AUTH_CODE = os.getenv("GOODSHORT_TOKEN", "A8D6AB170F7B89F2182561D3B32F390D")
 
 async def get_drama_detail(book_id: str):

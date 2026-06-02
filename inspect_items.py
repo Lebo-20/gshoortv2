@@ -4,7 +4,7 @@ import json
 
 async def check():
     async with httpx.AsyncClient() as client:
-        res = await client.get('https://goodshort.dramabos.my.id/home?page=1&lang=in')
+        res = await client.get('https://goodshort.dramabos.online/home?page=1&lang=in')
         data = res.json()
         records = data.get("data", {}).get("records", [])
         print(f"Found {len(records)} records")
