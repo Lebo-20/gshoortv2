@@ -551,7 +551,7 @@ async def auto_mode_loop():
             continue
             
         try:
-            interval = 5 if is_initial_run else 15
+            interval = 5 if is_initial_run else 120
             logger.info(f"🔍 Scanning sources (Next in {interval}m)...")
             
             # Source 1: Recommendation (Module)
@@ -609,7 +609,7 @@ async def auto_mode_loop():
                     try:
                         await client.send_message(ADMIN_ID, f"✅ **Sukses Auto-Post:** `{title}`\n⏳ Jeda: 1 jam.")
                     except: pass
-                    await asyncio.sleep(3600) # 1 hour delay after success
+                    logger.info("💤 Cooldown 30 minutes..."); await asyncio.sleep(30 * 60) # 30 mins delay after success
                 else:
                     logger.error(f"❌ Failed to process {title}")
                     try:
